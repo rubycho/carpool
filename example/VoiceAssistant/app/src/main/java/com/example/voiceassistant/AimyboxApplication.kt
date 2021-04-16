@@ -11,8 +11,8 @@ import com.justai.aimybox.components.AimyboxProvider
 import com.justai.aimybox.core.Config
 import com.justai.aimybox.speechkit.google.platform.GooglePlatformSpeechToText
 import com.justai.aimybox.speechkit.google.platform.GooglePlatformTextToSpeech
-// import com.justai.aimybox.speechkit.kaldi.KaldiAssets
-// import com.justai.aimybox.speechkit.kaldi.KaldiVoiceTrigger
+import com.justai.aimybox.speechkit.kaldi.KaldiAssets
+import com.justai.aimybox.speechkit.kaldi.KaldiVoiceTrigger
 import java.util.*
 
 
@@ -27,8 +27,8 @@ class AimyboxApplication : Application(), AimyboxProvider {
     private fun createAimybox(context: Context): Aimybox {
         val unitId = UUID.randomUUID().toString()
 
-//        val assets = KaldiAssets.fromApkAssets(this, "model/en")
-//        val voiceTrigger = KaldiVoiceTrigger(assets, listOf("listen", "hey"))
+        val assets = KaldiAssets.fromApkAssets(this, "model/en")
+        val voiceTrigger = KaldiVoiceTrigger(assets, listOf("listen", "hey"))
 
         val textToSpeech = GooglePlatformTextToSpeech(context, Locale.ENGLISH)
         val speechToText = GooglePlatformSpeechToText(context, Locale.ENGLISH)

@@ -18,6 +18,12 @@ allprojects {
     repositories {
         google()
         jcenter()
+        /* START REPO FOR AIMYBOX */
+        mavenCentral()
+        maven {
+            url = "https://dl.bintray.com/aimybox/aimybox-android-sdk/"
+        }
+        /* END REPO FOR AIMYBOX */
     }
 }
 

@@ -49,6 +49,7 @@ dependencies {
     implementation 'com.justai.aimybox:core:0.15.0'
     implementation 'com.justai.aimybox:components:0.1.10'
     implementation 'com.justai.aimybox:google-platform-speechkit:0.15.0'
+    implementation 'com.justai.aimybox:kaldi-speechkit:0.15.0'
 
     implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core:1.4.3'
 }
