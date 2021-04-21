@@ -13,13 +13,13 @@ import androidx.core.app.NotificationManagerCompat
 import com.example.voiceassistant.NotificationListener.Companion.FAKE_BINDER_ACTION
 import com.justai.aimybox.Aimybox
 import com.justai.aimybox.components.AimyboxAssistantFragment
-import com.justai.aimybox.model.TextSpeech
+import kotlinx.coroutines.*
 import java.util.*
 
 
 class MainActivity : AppCompatActivity() {
     companion object {
-        const val TAG = "com.example.voice_assistant.MainActivity"
+        const val TAG = "VA.MainActivity"
     }
 
     private lateinit var aimybox: Aimybox
@@ -27,37 +27,18 @@ class MainActivity : AppCompatActivity() {
     private var mBounded = false
     private var mService: NotificationListener? = null
 
-    private val mTimer = Timer()
     private val mConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
             Toast.makeText(this@MainActivity, "Service is connected", Toast.LENGTH_SHORT).show()
             mBounded = true
             mService = (service as NotificationListener.LocalBinder).instance
-
-            /* TODO: messy code!! */
-            mTimer.schedule(
-                object : TimerTask() {
-                    override fun run() {
-                        val notifications = mService!!.activeNotifications
-                        Log.d(TAG, "Notification empty(): " + notifications.isNullOrEmpty().toString())
-
-                        if (notifications != null && notifications.isNotEmpty()) {
-                            Log.d(TAG, "Notification size: " + notifications.size.toString())
-                            notifications.forEachIndexed { idx, item ->
-                                Log.d(TAG, "[" + idx + "] " + item.packageName)
-                            }
-                        }
-                    }
-                }, 0, 5 * 1000
-            )
+            mService!!.readAllNotifications()
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
             Toast.makeText(this@MainActivity, "Service is disconnected", Toast.LENGTH_SHORT).show()
             mBounded = false
             mService = null
-
-            mTimer.cancel()
         }
     }
 
@@ -72,13 +53,8 @@ class MainActivity : AppCompatActivity() {
             commit()
         }
 
-        aimybox = (application as AimyboxApplication).aimybox
-        aimybox.speak(TextSpeech("Hi Sung jae!"), Aimybox.NextAction.RECOGNITION)
-
-        /*
-            Request notification related permission.
-            currently user unfriendly :(
-        */
+        /* Request notification related permission.
+           currently user unfriendly */
         if (!permissionGranted()) {
             val intent = Intent(
                 "android.settings.ACTION_NOTIFICATION_LISTENER_SETTINGS"
