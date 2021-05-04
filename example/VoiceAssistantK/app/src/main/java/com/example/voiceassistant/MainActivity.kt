@@ -9,9 +9,8 @@ import android.app.Notification.EXTRA_TITLE
 import android.content.ComponentName
 import android.content.Intent
 import android.content.ServiceConnection
-import android.os.Build
-import android.os.Bundle
-import android.os.IBinder
+import android.os.*
+import android.os.VibrationEffect.DEFAULT_AMPLITUDE
 import android.provider.Settings
 import android.provider.Settings.ACTION_MANAGE_OVERLAY_PERMISSION
 import android.provider.Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS
@@ -21,6 +20,7 @@ import android.speech.SpeechRecognizer
 import android.speech.tts.TextToSpeech
 import android.speech.tts.TextToSpeech.QUEUE_FLUSH
 import android.speech.tts.UtteranceProgressListener
+import android.util.Log
 import android.view.View
 import android.view.WindowManager
 import android.widget.ImageButton
@@ -172,6 +172,13 @@ class MainActivity : AppCompatActivity() {
         checkPendingIntent()
     }
 
+    fun vibrate(duration: Long) {
+        val vib = getSystemService(VIBRATOR_SERVICE) as Vibrator
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
+            vib.vibrate(VibrationEffect.createOneShot(duration, DEFAULT_AMPLITUDE))
+        else vib.vibrate(duration)
+    }
+
     fun checkPendingIntent() {
         if (!bounded) return
         if (!service!!.pendingNotificationExists) return
@@ -185,6 +192,7 @@ class MainActivity : AppCompatActivity() {
         isPending = true
         val question =
             "You haven't replied to %s. %s. Would you like to reply?".format(person, content)
+        vibrate(1000)
         textToSpeech.speak(question, QUEUE_FLUSH, null, "randomId2")
         addScrollViewItem(question, true)
     }

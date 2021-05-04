@@ -92,6 +92,11 @@ class NotificationService : NotificationListenerService() {
             AlarmManager.INTERVAL_FIFTEEN_MINUTES,
             pendingIntent
         )
+//        alarmManager.setExact(
+//            AlarmManager.RTC_WAKEUP,
+//            System.currentTimeMillis() + 15 * 1000,
+//            pendingIntent
+//        )
     }
 
     fun cancelIntervalJob() {
