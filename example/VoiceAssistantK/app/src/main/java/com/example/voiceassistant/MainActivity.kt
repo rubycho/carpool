@@ -38,29 +38,35 @@ import com.android.volley.Response
 import com.android.volley.toolbox.JsonObjectRequest
 import com.android.volley.toolbox.Volley
 import com.example.voiceassistant.NotificationService.Companion.FAKE_BINDER_ACTION
+import com.example.voiceassistant.NotificationService.Companion.INTENT_EXTRA_KEY
 import org.json.JSONObject
 import java.util.*
 
 class MainActivity : AppCompatActivity() {
 
-    lateinit var speechRecognizer: SpeechRecognizer
-    lateinit var textToSpeech: TextToSpeech
+    private var appState = AppState.STANDBY
 
-    lateinit var chatScrollView: ScrollView
-    lateinit var chatContainer: LinearLayout
-    lateinit var micButton: ImageButton
+    private lateinit var speechRecognizer: SpeechRecognizer
+    private lateinit var textToSpeech: TextToSpeech
 
-    lateinit var requestQueue: RequestQueue
+    private lateinit var chatScrollView: ScrollView
+    private lateinit var chatContainer: LinearLayout
+    private lateinit var micButton: ImageButton
 
-    var service: NotificationService? = null
-    var bounded = false
+    private lateinit var requestQueue: RequestQueue
 
-    val connection = object : ServiceConnection {
+    private var service: NotificationService? = null
+    private var bounded = false
+
+    private lateinit var handler: Handler
+    private val timer = Timer()
+
+    private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
+            Log.d("tid (connection)", Process.myTid().toString())
+
             bounded = true
             service = (binder as NotificationService.LocalBinder).instance
-
-            checkPendingIntent()
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
@@ -69,10 +75,9 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private var isListening = false
-    private var isPending = false
-
     override fun onCreate(savedInstanceState: Bundle?) {
+        Log.d("tid (onCreate)", Process.myTid().toString())
+
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
@@ -92,10 +97,36 @@ class MainActivity : AppCompatActivity() {
                     override fun onStart(utteranceId: String?) {}
 
                     override fun onDone(utteranceId: String?) {
-                        if (isPending) micEnabled()
+                        Log.d("tid (TTS)", Process.myTid().toString())
+
+                        runOnUiThread {
+                            if (appState == AppState.C_ANSWER) {
+                                appState = AppState.STANDBY
+                                return@runOnUiThread
+                            }
+
+                            if (appState == AppState.P_ALERT) {
+                                appState = AppState.P_LISTEN
+                                micEnabled()
+                                return@runOnUiThread
+                            }
+
+                            if (appState == AppState.P_ALERT2) {
+                                appState = AppState.P_LISTEN2
+                                micEnabled()
+                                return@runOnUiThread
+                            }
+
+                            if (appState == AppState.P_DISMISS) {
+                                appState = AppState.STANDBY
+                                return@runOnUiThread
+                            }
+                        }
                     }
 
-                    override fun onError(utteranceId: String?) {}
+                    override fun onError(utteranceId: String?) {
+                        appState = AppState.STANDBY
+                    }
                 })
             }
         }
@@ -111,40 +142,73 @@ class MainActivity : AppCompatActivity() {
             override fun onBufferReceived(buffer: ByteArray?) {}
 
             override fun onEndOfSpeech() {
+                Log.d("tid (STT)", Process.myTid().toString())
+
                 micDisabled()
             }
 
             override fun onError(error: Int) {
+                appState = AppState.STANDBY
                 micDisabled()
             }
 
             override fun onResults(results: Bundle?) {
                 val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-                if (isPending) {
+
+                if (appState == AppState.C_LISTEN) {
+                    if (!matches.isNullOrEmpty()) {
+                        addScrollViewItem(matches.first())
+
+                        appState = AppState.C_NETWORK
+                        sendRequest(matches.first())
+                    }
+                    return
+                }
+
+                if (appState == AppState.P_LISTEN) {
                     if (matches.isNullOrEmpty()) {
-                        cancelPendingIntent(); return
+                        appState = AppState.STANDBY; return
                     }
 
                     val reply = matches.first()
                     var response = ""
-                    if (reply.startsWith("yes")) {
-                        response = "OK, I'll respond as %s.".format(reply.removePrefix("yes "))
-                        textToSpeech.speak(response, TextToSpeech.QUEUE_FLUSH, null, "randomId3")
-                    } else if (reply.startsWith("no")) {
+                    if (reply == "yes") {
+                        appState = AppState.P_ALERT2
+
+                        response = "OK. What would be the content?"
+                        textToSpeech.speak(response, QUEUE_FLUSH,
+                            null, PROACTIVE_CONFIRM_UID)
+                    } else if (reply == "no") {
+                        appState = AppState.P_DISMISS
+
                         response = "OK, I'll not bother you."
-                        textToSpeech.speak(response, QUEUE_FLUSH, null, "randomId4")
-                    } else sendRequest(reply)
+                        textToSpeech.speak(response, QUEUE_FLUSH,
+                            null, PROACTIVE_DISMISS_UID)
+                    } else {
+                        appState = AppState.STANDBY; return
+                    }
 
                     addScrollViewItem(reply)
-                    if (response.isNotEmpty()) addScrollViewItem(response, true)
-
-                    cancelPendingIntent()
+                    addScrollViewItem(response, true)
                     return
                 }
 
-                if (!matches.isNullOrEmpty()) {
-                    addScrollViewItem(matches.first())
-                    sendRequest(matches.first())
+                if (appState == AppState.P_LISTEN2) {
+                    if (matches.isNullOrEmpty()) {
+                        appState = AppState.STANDBY; return
+                    }
+
+                    val content = matches.first()
+                    val response = "OK. I\'ll respond as %s.".format(content)
+
+                    textToSpeech.speak(response, QUEUE_FLUSH, null, PROACTIVE_DONE_UID)
+
+                    addScrollViewItem(content)
+                    addScrollViewItem(response, true)
+
+                    appState = AppState.STANDBY
+                    resolveReplyableNotification()
+                    return
                 }
             }
 
@@ -154,22 +218,50 @@ class MainActivity : AppCompatActivity() {
         })
 
         micButton.setOnClickListener {
-            if (!isListening) micEnabled()
-            else micDisabled()
+            Log.d("tid (onClick)", Process.myTid().toString())
+
+            if (appState == AppState.STANDBY || appState == AppState.C_ANSWER) {
+                appState = AppState.C_LISTEN
+                micEnabled()
+                return@setOnClickListener
+            }
+            if (appState == AppState.C_LISTEN) {
+                appState = AppState.STANDBY
+                micDisabled()
+                return@setOnClickListener
+            }
         }
+
+        handler = Handler(Looper.getMainLooper())
     }
 
     override fun onStart() {
         super.onStart()
 
-        val intent = Intent(this, NotificationService::class.java)
-        intent.action = FAKE_BINDER_ACTION
+        val intent = Intent(this, NotificationService::class.java).apply {
+            action = FAKE_BINDER_ACTION
+        }
         bindService(intent, connection, BIND_AUTO_CREATE)
+
+        /* debug purpose */
+        timer.scheduleAtFixedRate(object: TimerTask() {
+            override fun run() {
+                Log.d("APPSTATE", appState.toString())
+            }
+        }, 0, 500)
+    }
+
+    override fun onStop() {
+        super.onStop()
+
+        timer.cancel()
     }
 
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
-        checkPendingIntent()
+
+        if (intent?.extras?.containsKey(INTENT_EXTRA_KEY) == true)
+            checkReplyableNotification()
     }
 
     fun vibrate(duration: Long) {
@@ -179,37 +271,52 @@ class MainActivity : AppCompatActivity() {
         else vib.vibrate(duration)
     }
 
-    fun checkPendingIntent() {
+    fun checkReplyableNotification() {
         if (!bounded) return
-        if (!service!!.pendingNotificationExists) return
+        if (!service!!.replyableNotificationExists) return
 
-        val statusBarNotification = service!!.pendingNotification!!
+        val statusBarNotification = service!!.replyableNotification!!
         val extras = statusBarNotification.notification.extras
 
         val person = extras.getCharSequence(EXTRA_TITLE)
         val content = extras.getCharSequence(EXTRA_TEXT)
 
-        isPending = true
-        val question =
-            "You haven't replied to %s. %s. Would you like to reply?".format(person, content)
-        vibrate(1000)
-        textToSpeech.speak(question, QUEUE_FLUSH, null, "randomId2")
-        addScrollViewItem(question, true)
+        /**
+         * If user is currently classic mode,
+         * delay every 1 min, until user exits classic mode.
+         * This is a temporary action.
+         */
+        val stateCheck = object: Runnable {
+            override fun run() {
+                if (appState != AppState.STANDBY) {
+                    Log.d("WAITING", "Proactive delayed.")
+
+                    handler.postDelayed(this, 60 * 1000)
+                    return
+                }
+
+                appState = AppState.P_ALERT
+
+                val question =
+                    "You haven't replied to %s. %s. Would you like to reply?".format(person, content)
+                vibrate(1000)
+                textToSpeech.speak(question, QUEUE_FLUSH, null, PROACTIVE_START_UID)
+                addScrollViewItem(question, true)
+                handler.removeCallbacks(this)
+            }
+        }
+        stateCheck.run()
     }
 
-    fun cancelPendingIntent() {
-        isPending = false
-
+    fun resolveReplyableNotification() {
         if (!bounded) return
-        if (!service!!.pendingNotificationExists) return
+        if (!service!!.replyableNotificationExists) return
 
-        service!!.pendingNotification = null
-        service!!.pendingNotificationExists = false
+        service!!.unsetReplyableNotification()
     }
 
     fun micEnabled() {
         textToSpeech.stop()
-        isListening = true
 
         runOnUiThread {
             speechRecognizer.startListening(createRecognizerIntent(Locale.ENGLISH.toString()))
@@ -223,8 +330,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     fun micDisabled() {
-        isListening = false
-
         runOnUiThread {
             speechRecognizer.stopListening()
             micButton.setBackgroundColor(
@@ -253,6 +358,9 @@ class MainActivity : AppCompatActivity() {
         val params = HashMap<String, String>()
         params["query"] = query
         params["key"] = BuildConfig.AIMYBOX_API_KEY
+        /**
+         * TODO: randomize unit
+         */
         params["unit"] = "1619181413977"
 
         val request = @RequiresApi(Build.VERSION_CODES.LOLLIPOP)
@@ -261,8 +369,12 @@ class MainActivity : AppCompatActivity() {
             url, JSONObject(params as Map<*, *>),
             Response.Listener
             {
+                Log.d("tid (volley)", Process.myTid().toString())
+
+                appState = AppState.C_ANSWER
+
                 val textResponse = it.getString("text")
-                textToSpeech.speak(textResponse, TextToSpeech.QUEUE_FLUSH, null, "randomID")
+                textToSpeech.speak(textResponse, TextToSpeech.QUEUE_FLUSH, null, RESPONSE_UID)
                 addScrollViewItem(textResponse, true)
             },
             Response.ErrorListener { }
@@ -272,6 +384,11 @@ class MainActivity : AppCompatActivity() {
         requestQueue.add(request)
     }
 
+    /**
+     * Got from aimybox SDK
+     * https://github.com/just-ai/aimybox-android-sdk/blob/master/google-platform-speechkit
+     * /src/main/java/com/justai/aimybox/speechkit/google/platform/GooglePlatformSpeechToText.kt#L113
+     */
     private fun createRecognizerIntent(language: String) =
         Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
@@ -284,17 +401,20 @@ class MainActivity : AppCompatActivity() {
 
     @SuppressLint("InlinedApi")
     private fun checkPermission() {
+        /* General permission */
         ActivityCompat.requestPermissions(
             this,
             arrayOf(RECORD_AUDIO, READ_EXTERNAL_STORAGE),
             PERMISSION_GRANTED
         )
 
+        /* Permission for launching activity when phone is locked */
         if (!Settings.canDrawOverlays(this)) {
             val intent = Intent(ACTION_MANAGE_OVERLAY_PERMISSION)
             startActivity(intent)
         }
 
+        /* Permission to read notifications */
         val sets = NotificationManagerCompat.getEnabledListenerPackages(this)
         if (!sets.contains(packageName)) {
             val intent = Intent(ACTION_NOTIFICATION_LISTENER_SETTINGS)
@@ -302,7 +422,11 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    fun lockScreenSetup() {
+    /**
+     * Got from stackoverflow
+     *https://stackoverflow.com/questions/35356848/android-how-to-launch-activity-over-lock-screen
+     */
+    private fun lockScreenSetup() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
             setShowWhenLocked(true)
             setTurnScreenOn(true)
@@ -315,5 +439,14 @@ class MainActivity : AppCompatActivity() {
                         WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON
             )
         }
+    }
+
+    companion object {
+        const val PROACTIVE_START_UID = "START_UTTERANCE"
+        const val PROACTIVE_CONFIRM_UID = "CONFIRM_UTTERANCE"
+        const val PROACTIVE_DISMISS_UID = "DISMISS_UTTERANCE"
+        const val PROACTIVE_DONE_UID = "DONE_UTTERANCE"
+
+        const val RESPONSE_UID = "RESPONSE_UTTERANCE"
     }
 }

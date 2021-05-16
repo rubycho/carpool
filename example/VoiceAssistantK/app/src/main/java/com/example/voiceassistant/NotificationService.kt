@@ -13,7 +13,10 @@ import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.util.Log
 
-
+/**
+ * NotificationListener
+ * Search reply-able notifications, and alert activity
+ */
 class NotificationService : NotificationListenerService() {
     /***
      * LocalBinder
@@ -24,15 +27,17 @@ class NotificationService : NotificationListenerService() {
     private val binder: IBinder = LocalBinder(this)
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            setPendingNotification()
+            setReplyableNotification()
         }
     }
 
-    lateinit var alarmManager: AlarmManager
-    lateinit var pendingIntent: PendingIntent
+    private lateinit var alarmManager: AlarmManager
+    private lateinit var pendingIntent: PendingIntent
 
-    var pendingNotification: StatusBarNotification? = null
-    var pendingNotificationExists: Boolean = false
+    var replyableNotification: StatusBarNotification? = null
+    var replyableNotificationExists: Boolean = false
+
+    private val debug = false
 
     /***
      * onBind(intent)
@@ -55,51 +60,64 @@ class NotificationService : NotificationListenerService() {
     override fun onCreate() {
         super.onCreate()
 
-        setIntervalJob()
+        setAlarm()
         registerReceiver(receiver, IntentFilter(BR_ACTION))
     }
 
     override fun onDestroy() {
         super.onDestroy()
 
-        cancelIntervalJob()
+        cancelAlarm()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         return START_STICKY
     }
 
-    fun setPendingNotification() {
+    private fun setReplyableNotification() {
         if (replyNotifications.isNullOrEmpty()) return
 
-        pendingNotification = replyNotifications.first()
-        pendingNotificationExists = true
+        replyableNotification = replyNotifications.first()
+        replyableNotificationExists = true
 
         val intent = Intent(this, MainActivity::class.java)
+        intent.putExtra(INTENT_EXTRA_KEY, true)
+
         intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         startActivity(intent)
     }
 
-    fun setIntervalJob() {
-        val intent = Intent(applicationContext, AlarmReceiver::class.java)
-        pendingIntent = PendingIntent.getBroadcast(applicationContext, 0, intent, 0)
-
-        alarmManager = getSystemService(ALARM_SERVICE) as AlarmManager
-        alarmManager.setInexactRepeating(
-            AlarmManager.RTC_WAKEUP,
-            System.currentTimeMillis() + AlarmManager.INTERVAL_FIFTEEN_MINUTES,
-            AlarmManager.INTERVAL_FIFTEEN_MINUTES,
-            pendingIntent
-        )
-//        alarmManager.setExact(
-//            AlarmManager.RTC_WAKEUP,
-//            System.currentTimeMillis() + 15 * 1000,
-//            pendingIntent
-//        )
+    fun unsetReplyableNotification() {
+        if (replyableNotificationExists) {
+            replyableNotificationExists = false
+            replyableNotification = null
+        }
     }
 
-    fun cancelIntervalJob() {
+    private fun setAlarm() {
+        val intent = Intent(applicationContext, AlarmReceiver::class.java)
+        pendingIntent = PendingIntent.getBroadcast(
+            applicationContext, 0, intent, 0)
+
+        alarmManager = getSystemService(ALARM_SERVICE) as AlarmManager
+        if (!debug)
+            alarmManager.setInexactRepeating(
+                AlarmManager.RTC_WAKEUP,
+                System.currentTimeMillis() + AlarmManager.INTERVAL_FIFTEEN_MINUTES,
+                AlarmManager.INTERVAL_FIFTEEN_MINUTES,
+                pendingIntent
+            )
+        /* debug purpose */
+        else
+            alarmManager.setExact(
+                AlarmManager.RTC_WAKEUP,
+                System.currentTimeMillis() + 15 * 1000,
+                pendingIntent
+            )
+    }
+
+    private fun cancelAlarm() {
         alarmManager.cancel(pendingIntent)
     }
 
@@ -156,10 +174,10 @@ class NotificationService : NotificationListenerService() {
     companion object {
         const val TAG = "VA.NotificationListener"
         const val FAKE_BINDER_ACTION = "com.example.voice_assistant.ACTION_FAKE_BINDER"
+        const val BR_ACTION = "com.example.voice_assistant.BR_INTENT"
+        const val INTENT_EXTRA_KEY = "com.example.voice_assistant.EXTRA"
 
         val REPLY_WORDS = arrayOf("reply", "답장")
         val REPLY_CATEGORY = arrayOf(CATEGORY_EMAIL, CATEGORY_MESSAGE)
-
-        val BR_ACTION = "com.example.voice_assistant.BR_INTENT"
     }
 }
