@@ -8,10 +8,12 @@ package com.example.hiemotion
 import android.media.AudioRecord
 import android.media.MediaRecorder
 import android.util.Log
+import org.jtransforms.fft.FloatFFT_1D
 import java.io.IOException
 import java.net.Socket
 import kotlin.concurrent.thread
 import kotlin.experimental.and
+import kotlin.math.abs
 
 /**
  * WavRecorder
@@ -23,8 +25,13 @@ class WavRecorder() {
 
     private var recordingThread: Thread? = null
 
+    private val ZCR_THRESHOLD = 10
+    private val EGY_THRESHOLD = 1000
+
+    private var fillData = false
+
     fun startRecording() {
-        recorder = AudioRecord(MediaRecorder.AudioSource.VOICE_RECOGNITION,
+        recorder = AudioRecord(MediaRecorder.AudioSource.MIC,
                 RECORDER_SAMPLE_RATE, RECORDER_CHANNELS,
                 RECORDER_AUDIO_ENCODING, 512)
         recorder?.startRecording()
@@ -58,7 +65,6 @@ class WavRecorder() {
 
     private fun sendWavDataToServer() {
         val sData = ShortArray(BufferElements2Rec)
-        val sDataAcc = arrayListOf<Short>()
 
         val data = arrayListOf<Byte>()
         for (byte in wavFileHeader()) {
@@ -68,48 +74,79 @@ class WavRecorder() {
         while (isRecording) {
             // gets the voice output from microphone to byte format
             recorder?.read(sData, 0, BufferElements2Rec)
-            sDataAcc.addAll(sData.toTypedArray())
 
-            try {
-                val bData = short2byte(sData)
-                for (byte in bData)
-                    data.add(byte)
-            } catch (e: IOException) {
-                e.printStackTrace()
-            }
+            if (!fillData) {
+                val fData = sData.map { it.toFloat() / Short.MAX_VALUE.toFloat() }.toFloatArray()
 
-            val elapsedTime = (data.size.toFloat() - 44) / (2 * RECORDER_SAMPLE_RATE.toFloat()) // val
-            if (elapsedTime > 1.0) { // val
-                updateHeaderInformation(data)
+                val FFT_SIZE = (BufferElements2Rec / 2)
+                val mFFT = FloatFFT_1D(FFT_SIZE.toLong())
+
+                mFFT.realForward(fData)
+
+                val freqMin = 100
+                val freqMax = 5000
+
+                for (fftBin in 0 until FFT_SIZE) {
+                    val freq = fftBin.toFloat() * 44100F / FFT_SIZE.toFloat()
+                    if (freq < freqMin || freq > freqMax) {
+                        fData[2 * fftBin] = 0F
+                        fData[2 * fftBin + 1] = 0F
+                    }
+                }
+
+                mFFT.realInverse(fData, false)
+                val sData2 = fData.map { (it * Short.MAX_VALUE).toInt().toShort() }.toShortArray()
 
                 /* calculate ZCR and Energy */
                 var ZCR = 0.0F
-                var EGY = 0.0F
-                for (i: Int in 0 until sDataAcc.size-1) {
-                    val curr = sDataAcc[i]
-                    val next = sDataAcc[i+1]
+                var EGY = 0L
+                for (i: Int in 0 until sData2.size-1) {
+                    val curr = sData2[i]
+                    val next = sData2[i+1]
 
                     if ((curr >= 0) && (next < 0)) ZCR++
                     if ((curr < 0) && (next >= 0)) ZCR++
                 }
 
-                for (i: Int in 0 until sDataAcc.size) {
-                    EGY += sDataAcc[i] * sDataAcc[i]
+                for (element in sData2) {
+                    EGY += abs(element.toInt())
                 }
 
-                ZCR /= sDataAcc.size
+                ZCR /= sData2.size
                 ZCR *= 100
 
-                EGY /= sDataAcc.size
+                EGY /= sData2.size
 
-                Log.d("ZCR: ", ZCR.toString())
-                Log.d("EGY: ", EGY.toString())
+                /* time diff */
+                if (ZCR > ZCR_THRESHOLD && EGY > EGY_THRESHOLD) {
+                    fillData = true
+                    Log.d("ZCR", ZCR.toString())
+                    Log.d("EGY", EGY.toString())
 
-                data.clear()
-                for (byte in wavFileHeader()) {
-                    data.add(byte)
+                    Log.d("Original", sData.joinToString())
+                    Log.d("Modified", sData2.joinToString())
                 }
-                sDataAcc.clear()
+            }
+
+            if (fillData) {
+                try {
+                    val bData = short2byte(sData)
+                    for (byte in bData)
+                        data.add(byte)
+                } catch (e: IOException) {
+                    e.printStackTrace()
+                }
+
+                val elapsedTime = (data.size.toFloat() - 44) / (2 * RECORDER_SAMPLE_RATE.toFloat())
+                if (elapsedTime > 3.0) {
+                    updateHeaderInformation(data)
+                    sendToServer(data)
+                    data.clear()
+                    for (byte in wavFileHeader()) {
+                        data.add(byte)
+                    }
+                    fillData = false
+                }
             }
         }
     }
