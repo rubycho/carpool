@@ -7,22 +7,11 @@ import androidx.core.app.ActivityCompat
 
 
 class MainActivity : AppCompatActivity() {
-    private lateinit var wavRecorder: WavRecorder
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        wavRecorder = WavRecorder()
-        wavRecorder.startRecording()
-
         requestPermission()
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
-
-        wavRecorder.stopRecording()
     }
 
     private fun requestPermission() {

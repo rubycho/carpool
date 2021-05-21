@@ -61,3 +61,9 @@
 
 * Applied JTransform (FFT) library to eliminate noises on audio for better detection.
 * Need more **discovery** about library & FFT.
+
+### update README (2021/05/19)
+
+### [HE] feat: replace FFT(DSP) library (2021/05/21)
+
+* Remove JTransform, Applied TarsosDSP which has pitch detection.
