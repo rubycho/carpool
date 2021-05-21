@@ -67,3 +67,7 @@
 ### [HE] feat: replace FFT(DSP) library (2021/05/21)
 
 * Remove JTransform, Applied TarsosDSP which has pitch detection.
+
+### [HE] feat: add socket server & emotion model (2021/05/21)
+
+* Add python socket server & MLP model where input=audio features, output=emotion (softmax).
