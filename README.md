@@ -4,6 +4,7 @@
 
 * \[VA\]: Voice Assistant
 * \[HE\]: Hi Emotion
+* \[MC\]: MicCentral
 
 ### Initial commit (2021/04/05)
 
@@ -71,3 +72,13 @@
 ### [HE] feat: add socket server & emotion model (2021/05/21)
 
 * Add python socket server & MLP model where input=audio features, output=emotion (softmax).
+
+### [MC] feat: add MicCentral & integrate with HE, VA (2021/06/01)
+
+* Add MicCentral application.
+* Reason for adding MC
+    * Android allows only one application to access mic at a time.
+    * In this constraint, Hi Emotion would not work while VA is active.
+    * Thus, MC is added to propagate mic recorded buffer (file) to other applications.
+
+### update README (2021/06/01)
