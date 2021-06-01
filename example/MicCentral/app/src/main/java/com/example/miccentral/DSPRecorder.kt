@@ -1,5 +1,7 @@
-package com.example.hiemotion
+package com.example.miccentral
 
+import android.content.Context
+import android.content.Intent
 import android.util.Log
 import be.tarsos.dsp.AudioDispatcher
 import be.tarsos.dsp.AudioEvent
@@ -7,69 +9,118 @@ import be.tarsos.dsp.AudioProcessor
 import be.tarsos.dsp.io.android.AudioDispatcherFactory
 import be.tarsos.dsp.pitch.PitchDetectionHandler
 import be.tarsos.dsp.pitch.PitchProcessor
-import java.io.InputStream
-import java.net.Socket
 import kotlin.concurrent.thread
+import kotlin.math.abs
 
 
-class DSPRecorder {
+class DSPRecorder(val context: Context) {
     private lateinit var dispatcher: AudioDispatcher
-    private val dataToSend = ArrayList<Byte>()
+
+    private val voiceData = ArrayList<Byte>()
+    private var voiceTimestamp: Long = 0
+    private var pitchTimestamp: Long = 0
 
     private var isRecording = false
+    private var isRecMode = false
+    private var recRequest = false
+    private var recRequestTimeStamp = 0L
 
     companion object {
         const val TAG = "DSPRecorder"
+        const val INTENT_ACTION = "MIC_CENTRAL_REC_RESPONSE"
 
-        const val PITCH_FREQ_MIN = 100
-
-        const val SAMPLE_RATE   = 44100
-        const val BUFF_SIZE     = 1024 * 7
-
+        const val PITCH_FREQ_MIN            = 100
+        const val SAMPLE_RATE               = 44100
+        const val BUFF_SIZE                 = 1024 * 7
         const val BITS_PER_SAMPLE: Short    = 16
         const val NUM_CHANNELS: Short       = 1
+        const val BYTE_RATE                 = SAMPLE_RATE * NUM_CHANNELS * 16 / 8
+    }
 
-        const val BYTE_RATE = SAMPLE_RATE * NUM_CHANNELS * 16 / 8
+    fun setRecRequest(timestamp: Long) {
+        recRequest = true
+        recRequestTimeStamp = timestamp
+    }
+
+    fun handleRecRequest() {
+        recRequest = false
+        isRecMode = true
+
+        pitchTimestamp = System.currentTimeMillis()
+    }
+
+    fun resetRecord() {
+        isRecording = true
+        voiceTimestamp = System.currentTimeMillis()
+        voiceData.clear()
+
+        for (byte in wavFileHeader())
+            voiceData.add(byte)
     }
 
     fun startRecording() {
         dispatcher = AudioDispatcherFactory.fromDefaultMicrophone(SAMPLE_RATE, BUFF_SIZE, 0)
 
-        for (byte in wavFileHeader())
-            dataToSend.add(byte)
-
         val pitchDetectionHandler = PitchDetectionHandler { p0, p1 ->
             val pitch = p0?.pitch
-            if (!isRecording && pitch!! >= PITCH_FREQ_MIN)
-                isRecording = true
+            if (pitch!! >= PITCH_FREQ_MIN)
+                pitchTimestamp = System.currentTimeMillis()
+
+            if (!isRecording) {
+                if (pitch >= PITCH_FREQ_MIN) {
+                    resetRecord()
+                    return@PitchDetectionHandler
+                }
+                if (recRequest) {
+                    resetRecord()
+                    handleRecRequest()
+                    return@PitchDetectionHandler
+                }
+            }
         }
+
         val pitchProcessor = PitchProcessor(
-            PitchProcessor.PitchEstimationAlgorithm.FFT_YIN,
-            SAMPLE_RATE.toFloat(),
-            BUFF_SIZE,
-            pitchDetectionHandler
+                PitchProcessor.PitchEstimationAlgorithm.FFT_YIN,
+                SAMPLE_RATE.toFloat(),
+                BUFF_SIZE,
+                pitchDetectionHandler
         )
         dispatcher.addAudioProcessor(pitchProcessor)
 
         val baseProcessor = object: AudioProcessor {
             override fun process(p0: AudioEvent?): Boolean {
                 if (isRecording) {
-                    Log.d(this@DSPRecorder.javaClass.name, "recording (3s) enabled")
+                    Log.d(TAG, "recording enabled")
+
+                    if (recRequest) {
+                        resetRecord()
+                        handleRecRequest()
+                    }
 
                     for (byte in p0!!.byteBuffer)
-                        dataToSend.add(byte)
+                        voiceData.add(byte)
 
-                    val elapsedTime = (dataToSend.size.toFloat() - 44) /
-                            (2 * SAMPLE_RATE.toFloat())
-                    if (elapsedTime > 3.0) {
+                    if (abs(System.currentTimeMillis() - pitchTimestamp) > 1500) {
                         isRecording = false
+                        updateHeaderInformation(voiceData)
+                        Log.d(TAG, voiceData.size.toString())
 
-                        updateHeaderInformation(dataToSend)
-                        sendToServer(dataToSend)
+                        var filename = System.currentTimeMillis().toString() + ".wav"
+                        if (isRecMode)
+                            filename = "$recRequestTimeStamp.wav"
 
-                        dataToSend.clear()
-                        for (byte in wavFileHeader())
-                            dataToSend.add(byte)
+                        thread(true) {
+                            val voiceData2 = voiceData.toList().toByteArray()
+                            val fos = context.openFileOutput(filename, Context.MODE_PRIVATE)
+                            fos.write(voiceData2)
+                            fos.close()
+
+                            val intent = Intent(INTENT_ACTION)
+                            intent.putExtra("path", filename)
+                            context.sendBroadcast(intent)
+                        }
+
+                        isRecMode = false
                     }
                 }
                 return true
@@ -79,51 +130,12 @@ class DSPRecorder {
         }
         dispatcher.addAudioProcessor(baseProcessor)
 
-        Thread(dispatcher, "audio thread").start()
+        Thread(dispatcher, "Audio Thread").start()
     }
 
     fun stopRecording() {
-        if (!dispatcher.isStopped) dispatcher.stop()
-    }
-
-    private fun int2byte(i: Int): ByteArray {
-        return byteArrayOf(
-            (i and 0x000000FF).toByte(),
-            (i shr 8).toByte(),
-            (i shr 16).toByte(),
-            (i shr 24).toByte()
-        )
-    }
-
-    fun readFromStream(iStream: InputStream): String {
-        val data = ArrayList<Byte>()
-
-        var c = 0
-        while (c != -1) {
-            c = iStream.read()
-            data.add(c.toByte())
-        }
-
-        return String(data.toByteArray())
-    }
-
-    fun sendToServer(data: ArrayList<Byte>) {
-        val copy = data.toByteArray()
-        thread (true) {
-            val socket = Socket(BuildConfig.SOCKET_HOST, BuildConfig.SOCKET_PORT)
-            val oStream = socket.getOutputStream()
-            val iStream = socket.getInputStream()
-
-            oStream.write(int2byte(copy.size))
-            oStream.write(copy)
-
-            val emotion = readFromStream(iStream)
-            Log.d(TAG, emotion)
-
-            iStream.close()
-            oStream.close()
-            socket.close()
-        }
+        if (!dispatcher.isStopped)
+            dispatcher.stop()
     }
 
     private fun wavFileHeader(): ByteArray {

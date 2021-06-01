@@ -8,7 +8,10 @@
     tools:context=".MainActivity">
 
     <TextView
+        android:id="@+id/curr_emotion"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="@string/app_name"/>
+        android:layout_margin="8dp"
+        android:textSize="24sp"
+        android:text="Hello, Hi Emotion!"/>
 </LinearLayout>

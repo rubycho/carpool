@@ -27,15 +27,15 @@ class NotificationService : NotificationListenerService() {
     private val binder: IBinder = LocalBinder(this)
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            setReplyableNotification()
+            setReplyNotification()
         }
     }
 
     private lateinit var alarmManager: AlarmManager
     private lateinit var pendingIntent: PendingIntent
 
-    var replyableNotification: StatusBarNotification? = null
-    var replyableNotificationExists: Boolean = false
+    var replyNotification: StatusBarNotification? = null
+    var replyNotificationExists: Boolean = false
 
     private val debug = false
 
@@ -61,37 +61,38 @@ class NotificationService : NotificationListenerService() {
         super.onCreate()
 
         setAlarm()
-        registerReceiver(receiver, IntentFilter(BR_ACTION))
+        registerReceiver(receiver, IntentFilter(LOOP_ACTION))
     }
 
     override fun onDestroy() {
         super.onDestroy()
 
         cancelAlarm()
+        unregisterReceiver(receiver)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         return START_STICKY
     }
 
-    private fun setReplyableNotification() {
+    private fun setReplyNotification() {
         if (replyNotifications.isNullOrEmpty()) return
 
-        replyableNotification = replyNotifications.first()
-        replyableNotificationExists = true
+        replyNotification = replyNotifications.first()
+        replyNotificationExists = true
 
         val intent = Intent(this, MainActivity::class.java)
-        intent.putExtra(INTENT_EXTRA_KEY, true)
+        intent.putExtra(REPLY_SET_EXTRA_KEY, true)
 
         intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         startActivity(intent)
     }
 
-    fun unsetReplyableNotification() {
-        if (replyableNotificationExists) {
-            replyableNotificationExists = false
-            replyableNotification = null
+    fun unsetReplyNotification() {
+        if (replyNotificationExists) {
+            replyNotificationExists = false
+            replyNotification = null
         }
     }
 
@@ -173,9 +174,11 @@ class NotificationService : NotificationListenerService() {
 
     companion object {
         const val TAG = "VA.NotificationListener"
+
         const val FAKE_BINDER_ACTION = "com.example.voice_assistant.ACTION_FAKE_BINDER"
-        const val BR_ACTION = "com.example.voice_assistant.BR_INTENT"
-        const val INTENT_EXTRA_KEY = "com.example.voice_assistant.EXTRA"
+        const val LOOP_ACTION = "com.example.voice_assistant.BR_INTENT"
+
+        const val REPLY_SET_EXTRA_KEY = "com.example.voice_assistant.EXTRA"
 
         val REPLY_WORDS = arrayOf("reply", "답장")
         val REPLY_CATEGORY = arrayOf(CATEGORY_EMAIL, CATEGORY_MESSAGE)

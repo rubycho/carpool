@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">MicCentral</string>
+    <string name="channel_name">MicCentral</string>
+    <string name="channel_description">Channel for MicCentral</string>
+</resources>

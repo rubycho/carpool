@@ -44,7 +44,14 @@ def handle_cli(conn, addr):
     f = open(p, "wb")
 
     # TODO: iterate until 4 byte
-    blimit = conn.recv(4)
+    bsize = 4
+    blimit = []
+
+    while (bsize > 0):
+        tmp = conn.recv(1)
+        if len(tmp) > 0:
+            blimit.append(tmp[0])
+            bsize -= len(tmp)
     limit = int.from_bytes(blimit, "little")
 
     recved = 0
