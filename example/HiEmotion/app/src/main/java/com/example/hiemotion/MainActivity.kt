@@ -2,9 +2,8 @@ package com.example.hiemotion
 
 import android.Manifest.permission.*
 import android.content.Intent
-import android.content.IntentFilter
 import android.os.Bundle
-import android.widget.TextView
+import android.view.View
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -17,9 +16,16 @@ class MainActivity : AppCompatActivity() {
         setContentView(R.layout.activity_main)
 
         requestPermission()
+    }
 
+    fun startEmotion(v: View) {
         val intent = Intent(this, TrackerService::class.java)
         ContextCompat.startForegroundService(this, intent)
+    }
+
+    fun stopEmotion(v: View) {
+        val intent = Intent(this, TrackerService::class.java)
+        applicationContext.stopService(intent)
     }
 
     private fun requestPermission() {

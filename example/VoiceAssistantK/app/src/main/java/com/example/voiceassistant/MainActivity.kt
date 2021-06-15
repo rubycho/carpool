@@ -100,13 +100,19 @@ class MainActivity : AppCompatActivity() {
 
                     if (appState == AppState.P_ALERT) {
                         appState = AppState.P_LISTEN
-                        micEnabled()
+
+                        Handler(Looper.getMainLooper()).postDelayed({
+                            micEnabled()
+                        }, 500)
                         return@runOnUiThread
                     }
 
                     if (appState == AppState.P_ALERT2) {
                         appState = AppState.P_LISTEN2
-                        micEnabled()
+
+                        Handler(Looper.getMainLooper()).postDelayed({
+                            micEnabled()
+                        }, 500)
                         return@runOnUiThread
                     }
 
@@ -153,13 +159,13 @@ class MainActivity : AppCompatActivity() {
 
                         val reply = s
                         var response = ""
-                        if (reply.startsWith("yes")) {
+                        if (reply.startsWith("yes") || reply.startsWith("Yes")) {
                             appState = AppState.P_ALERT2
 
                             response = "OK. What would be the content?"
                             textToSpeech.speak(response, QUEUE_FLUSH,
                                 null, PROACTIVE_CONFIRM_UID)
-                        } else if (reply.startsWith("no")) {
+                        } else if (reply.startsWith("no") || reply.startsWith("No")) {
                             appState = AppState.P_DISMISS
 
                             response = "OK, I'll not bother you."
@@ -226,6 +232,9 @@ class MainActivity : AppCompatActivity() {
         }
 
         handler = Handler(Looper.getMainLooper())
+
+        if (intent?.extras?.containsKey(REPLY_SET_EXTRA_KEY) == true)
+            checkReplyableNotification()
     }
 
     override fun onStart() {
@@ -236,18 +245,18 @@ class MainActivity : AppCompatActivity() {
         }
         bindService(intent, connection, BIND_AUTO_CREATE)
 
-        /* debug purpose */
-        timer.scheduleAtFixedRate(object: TimerTask() {
-            override fun run() {
-                Log.d("APPSTATE", appState.toString())
-            }
-        }, 0, 500)
+//        /* debug purpose */
+//        timer.scheduleAtFixedRate(object: TimerTask() {
+//            override fun run() {
+//                Log.d("APPSTATE", appState.toString())
+//            }
+//        }, 0, 500)
     }
 
     override fun onStop() {
         super.onStop()
 
-        timer.cancel()
+//        timer.cancel()
     }
 
     override fun onNewIntent(intent: Intent?) {
@@ -304,7 +313,6 @@ class MainActivity : AppCompatActivity() {
     fun resolveReplyableNotification() {
         if (!bounded) return
         if (!service!!.replyNotificationExists) return
-
         service!!.unsetReplyNotification()
     }
 

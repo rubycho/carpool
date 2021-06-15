@@ -43,7 +43,7 @@ class MySpeechRecognizer(
 
     fun stopListening() {
         isCancelled = true
-        timestamp = 0
+        timestamp = 0L
 
         callback.onStop()
     }

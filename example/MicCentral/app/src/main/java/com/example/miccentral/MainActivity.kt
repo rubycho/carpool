@@ -27,7 +27,7 @@ class MainActivity : AppCompatActivity() {
         ), 0)
     }
 
-    fun onButtonClick(v: View) {
+    fun startCentral(v: View) {
         for (p in PERMISSION_LIST) {
             if (ContextCompat.checkSelfPermission(this, p) != PERMISSION_GRANTED) {
                 Toast.makeText(this, "Permission not granted", Toast.LENGTH_SHORT).show()
@@ -37,6 +37,10 @@ class MainActivity : AppCompatActivity() {
 
         ContextCompat.startForegroundService(this, Intent(this, CentralService::class.java))
         finish()
+    }
+
+    fun stopCentral(v: View) {
+        applicationContext.stopService(Intent(this, CentralService::class.java))
     }
 
     companion object {

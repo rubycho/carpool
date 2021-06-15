@@ -12,5 +12,8 @@ class AlarmReceiver : BroadcastReceiver() {
      */
     override fun onReceive(context: Context, intent: Intent) {
         context.sendBroadcast(Intent(LOOP_ACTION))
+
+        if (NotificationService.CPMode) NotificationService.setAlarmCP(context)
+        else NotificationService.setAlarmNCP(context)
     }
 }

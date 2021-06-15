@@ -14,4 +14,19 @@
         android:layout_margin="8dp"
         android:textSize="24sp"
         android:text="Hello, Hi Emotion!"/>
+
+    <Button
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_margin="8dp"
+        android:text="Start Hi Emotion"
+        android:onClick="startEmotion" />
+
+    <Button
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_margin="8dp"
+        android:text="Stop Hi Emotion"
+        android:onClick="stopEmotion" />
+
 </LinearLayout>

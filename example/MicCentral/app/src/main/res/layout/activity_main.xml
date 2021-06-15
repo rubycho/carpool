@@ -15,10 +15,18 @@
         android:text="Hello, MicCentral!" />
 
     <Button
-        android:id="@+id/button"
+        android:id="@+id/start_btn"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_margin="8dp"
-        android:text="Start MicCentral service"
-        android:onClick="onButtonClick" />
+        android:text="Start MicCentral"
+        android:onClick="startCentral" />
+
+    <Button
+        android:id="@+id/stop_btn"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_margin="8dp"
+        android:text="Stop MicCentral"
+        android:onClick="stopCentral" />
 </LinearLayout>

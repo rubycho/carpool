@@ -12,6 +12,8 @@ import android.os.IBinder
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.util.Log
+import com.example.carpool.ds.Inform
+import com.example.voiceassistant.MySpeechRecognizer.Companion.MIC_CENTRAL_REQUEST_ACTION
 
 /**
  * NotificationListener
@@ -25,19 +27,42 @@ class NotificationService : NotificationListenerService() {
     class LocalBinder(val instance: NotificationService) : Binder()
 
     private val binder: IBinder = LocalBinder(this)
-    private val receiver = object : BroadcastReceiver() {
+    private val regReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            registerActuation()
+        }
+    }
+    private val triggerReceiver = object: BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            triggerActuation()
+        }
+    }
+
+    private val loopReceiver = object: BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             setReplyNotification()
         }
     }
 
-    private lateinit var alarmManager: AlarmManager
-    private lateinit var pendingIntent: PendingIntent
+    private val initReceiver = object: BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            var path: String? = null
+            var fromAudio: Boolean? = null
+
+            try {
+                path = intent!!.extras!!.getString("path")
+                fromAudio = intent!!.extras!!.getBoolean("fromAudio")
+            } catch (e: Exception) {
+                Log.d(TAG, "failed to extract path")
+                e.printStackTrace()
+            }
+
+            if (path != null && fromAudio != true) initAlarm()
+        }
+    }
 
     var replyNotification: StatusBarNotification? = null
     var replyNotificationExists: Boolean = false
-
-    private val debug = false
 
     /***
      * onBind(intent)
@@ -57,30 +82,83 @@ class NotificationService : NotificationListenerService() {
         return super.onBind(intent)
     }
 
+    var initiated = false
+    fun initAlarm() {
+        if (!initiated) {
+            initiated = true
+
+            if (CPMode) onCreateCP()
+            else onCreateNCP()
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
 
-        setAlarm()
-        registerReceiver(receiver, IntentFilter(LOOP_ACTION))
+        registerReceiver(initReceiver, IntentFilter("MIC_CENTRAL_REC_RESPONSE"))
+    }
+
+    fun onCreateCP() {
+        setAlarmCP(this, true)
+        registerReceiver(regReceiver, IntentFilter(LOOP_ACTION))
+        registerReceiver(triggerReceiver, IntentFilter(CH_NAME))
+    }
+
+    fun onCreateNCP() {
+        setAlarmNCP(this)
+        registerReceiver(loopReceiver, IntentFilter(LOOP_ACTION))
     }
 
     override fun onDestroy() {
         super.onDestroy()
 
+        if (CPMode) onDestroyCP()
+        else onDestroyNCP()
+
+        unregisterReceiver(initReceiver)
+    }
+
+    fun onDestroyCP() {
         cancelAlarm()
-        unregisterReceiver(receiver)
+        unregisterReceiver(regReceiver)
+        unregisterReceiver(triggerReceiver)
+    }
+
+    fun onDestroyNCP() {
+        cancelAlarm()
+        unregisterReceiver(loopReceiver)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         return START_STICKY
     }
 
-    private fun setReplyNotification() {
+    private fun registerActuation() {
         if (replyNotifications.isNullOrEmpty()) return
 
-        replyNotification = replyNotifications.first()
-        replyNotificationExists = true
+        val currTime = System.currentTimeMillis()
+        val marginTime = 2 * 60 * 1000
 
+        val sorted = replyNotifications.sortedWith(compareBy { it.notification.`when` })
+        if ((currTime + marginTime) - sorted[0].notification.`when` >= notificationOlderThan) {
+            replyNotification = sorted.first()
+            replyNotificationExists = true
+
+            val inform = Inform().apply {
+                chName = CH_NAME
+                actId = currTime
+                category = "speak"
+                start = currTime
+                end = currTime + marginTime * 2
+            }
+            val intent = Intent("CARPOOL_ACTUATION").apply {
+                putExtra("inform", inform)
+            }
+            sendBroadcast(intent)
+        }
+    }
+
+    private fun triggerActuation() {
         val intent = Intent(this, MainActivity::class.java)
         intent.putExtra(REPLY_SET_EXTRA_KEY, true)
 
@@ -89,37 +167,27 @@ class NotificationService : NotificationListenerService() {
         startActivity(intent)
     }
 
-    fun unsetReplyNotification() {
-        if (replyNotificationExists) {
-            replyNotificationExists = false
-            replyNotification = null
+    private fun setReplyNotification() {
+        if (replyNotifications.isNullOrEmpty()) return
+
+        val currTime = System.currentTimeMillis()
+
+        val sorted = replyNotifications.sortedWith(compareBy { it.notification.`when` })
+        if (currTime - sorted[0].notification.`when` >= notificationOlderThan) {
+            replyNotification = sorted.first()
+            replyNotificationExists = true
+
+            triggerActuation()
         }
     }
 
-    private fun setAlarm() {
-        val intent = Intent(applicationContext, AlarmReceiver::class.java)
-        pendingIntent = PendingIntent.getBroadcast(
-            applicationContext, 0, intent, 0)
+    fun unsetReplyNotification() {
+        if (replyNotificationExists) {
+            cancelNotification(replyNotification!!.key)
 
-        alarmManager = getSystemService(ALARM_SERVICE) as AlarmManager
-        if (!debug)
-            alarmManager.setInexactRepeating(
-                AlarmManager.RTC_WAKEUP,
-                System.currentTimeMillis() + AlarmManager.INTERVAL_FIFTEEN_MINUTES,
-                AlarmManager.INTERVAL_FIFTEEN_MINUTES,
-                pendingIntent
-            )
-        /* debug purpose */
-        else
-            alarmManager.setExact(
-                AlarmManager.RTC_WAKEUP,
-                System.currentTimeMillis() + 15 * 1000,
-                pendingIntent
-            )
-    }
-
-    private fun cancelAlarm() {
-        alarmManager.cancel(pendingIntent)
+            replyNotificationExists = false
+            replyNotification = null
+        }
     }
 
     /***
@@ -174,6 +242,7 @@ class NotificationService : NotificationListenerService() {
 
     companion object {
         const val TAG = "VA.NotificationListener"
+        val CPMode = true
 
         const val FAKE_BINDER_ACTION = "com.example.voice_assistant.ACTION_FAKE_BINDER"
         const val LOOP_ACTION = "com.example.voice_assistant.BR_INTENT"
@@ -182,5 +251,46 @@ class NotificationService : NotificationListenerService() {
 
         val REPLY_WORDS = arrayOf("reply", "답장")
         val REPLY_CATEGORY = arrayOf(CATEGORY_EMAIL, CATEGORY_MESSAGE)
+
+        const val CH_NAME = "com.example.voice_assistant.CH"
+
+        private lateinit var alarmManager: AlarmManager
+        private lateinit var pendingIntent: PendingIntent
+
+        const val alertPeriod = 3 * 60 * 1000
+        const val notificationOlderThan = 1 * 60 * 1000
+
+        fun setAlarmCP(context: Context, init: Boolean = false) {
+            var triggerAt = alertPeriod
+            if (init) triggerAt = 1 * 60 * 1000
+
+            val intent = Intent(context, AlarmReceiver::class.java)
+            pendingIntent = PendingIntent.getBroadcast(
+                context, 0, intent, 0)
+
+            alarmManager = context.getSystemService(ALARM_SERVICE) as AlarmManager
+            alarmManager.setExact(
+                AlarmManager.RTC_WAKEUP,
+                System.currentTimeMillis() + triggerAt,
+                pendingIntent
+            )
+        }
+
+        fun setAlarmNCP(context: Context) {
+            val intent = Intent(context, AlarmReceiver::class.java)
+            pendingIntent = PendingIntent.getBroadcast(
+                context, 0, intent, 0)
+
+            alarmManager = context.getSystemService(ALARM_SERVICE) as AlarmManager
+            alarmManager.setExact(
+                AlarmManager.RTC_WAKEUP,
+                System.currentTimeMillis() + alertPeriod,
+                pendingIntent
+            )
+        }
+
+        private fun cancelAlarm() {
+            alarmManager.cancel(pendingIntent)
+        }
     }
 }

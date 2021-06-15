@@ -25,7 +25,7 @@ class NotificationUtil(val context: Context) {
     fun createNotification() =
             NotificationCompat.Builder(context, CHANNEL_ID)
                     .setSmallIcon(R.drawable.ic_noti)
-                    .setContentTitle("MicCentral On")
+                    .setContentTitle("MicCentral ON")
                     .setContentText("I am listening!")
                     .setAutoCancel(false)
                     .setOngoing(true)

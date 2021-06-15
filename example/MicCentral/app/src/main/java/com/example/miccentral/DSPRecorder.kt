@@ -2,6 +2,7 @@ package com.example.miccentral
 
 import android.content.Context
 import android.content.Intent
+import android.media.AudioManager
 import android.util.Log
 import be.tarsos.dsp.AudioDispatcher
 import be.tarsos.dsp.AudioEvent
@@ -15,6 +16,7 @@ import kotlin.math.abs
 
 class DSPRecorder(val context: Context) {
     private lateinit var dispatcher: AudioDispatcher
+    private lateinit var audioManager: AudioManager
 
     private val voiceData = ArrayList<Byte>()
     private var voiceTimestamp: Long = 0
@@ -22,6 +24,7 @@ class DSPRecorder(val context: Context) {
 
     private var isRecording = false
     private var isRecMode = false
+    private var fromAudio = false
     private var recRequest = false
     private var recRequestTimeStamp = 0L
 
@@ -37,6 +40,10 @@ class DSPRecorder(val context: Context) {
         const val BYTE_RATE                 = SAMPLE_RATE * NUM_CHANNELS * 16 / 8
     }
 
+    init {
+        audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+    }
+
     fun setRecRequest(timestamp: Long) {
         recRequest = true
         recRequestTimeStamp = timestamp
@@ -50,6 +57,7 @@ class DSPRecorder(val context: Context) {
     }
 
     fun resetRecord() {
+        fromAudio = false
         isRecording = true
         voiceTimestamp = System.currentTimeMillis()
         voiceData.clear()
@@ -97,6 +105,8 @@ class DSPRecorder(val context: Context) {
                         handleRecRequest()
                     }
 
+                    fromAudio = fromAudio || audioManager.isMusicActive
+
                     for (byte in p0!!.byteBuffer)
                         voiceData.add(byte)
 
@@ -117,6 +127,10 @@ class DSPRecorder(val context: Context) {
 
                             val intent = Intent(INTENT_ACTION)
                             intent.putExtra("path", filename)
+                            intent.putExtra("fromAudio", fromAudio)
+
+                            Log.d(TAG, "fromAudio: " + fromAudio.toString())
+
                             context.sendBroadcast(intent)
                         }
 
